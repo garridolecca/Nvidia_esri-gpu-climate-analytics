@@ -4,7 +4,7 @@ GPU-accelerated climate data analysis combining **NVIDIA CuPy** with **ArcGIS Ma
 
 ## Live Demo
 
-**[View Live App](https://garridolecca.github.io/gpu-climate-analytics/)**
+**[View Live App](https://garridolecca.github.io/Nvidia_esri-gpu-climate-analytics/)**
 
 ## GPU Analytics Pipeline
 
