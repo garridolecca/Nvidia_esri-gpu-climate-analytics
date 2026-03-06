@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GPU Climate Analytics</title>
+  <script type="module" src="https://js.arcgis.com/5.0/"></script>
+  <style>
+    :root{--bg:#0a0e17;--bg2:#111827;--bg3:#1a2332;--brd:#1e293b;--t1:#e5e7eb;--t2:#9ca3af;--t3:#6b7280;--ac:#00d4ff;--nv:#76b900}
+    *{margin:0;padding:0;box-sizing:border-box}html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--t1)}
+    #hdr{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:linear-gradient(135deg,#0f1729,#162033,#0f3460);border-bottom:1px solid var(--brd)}
+    #hdr h1{font-size:18px;font-weight:600}#hdr h1 span{color:var(--ac)}.sub{font-size:11px;color:var(--t3)}
+    .bdg{padding:3px 8px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase}.bdg-n{background:var(--nv);color:#000}.bdg-a{background:#0079c1;color:#fff}
+    #app{display:flex;height:calc(100vh - 56px)}
+    #sb{width:300px;min-width:300px;background:var(--bg2);border-right:1px solid var(--brd);display:flex;flex-direction:column;overflow-y:auto}
+    .sl{padding:12px 18px 4px;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
+    .lb{padding:10px 16px;cursor:pointer;border:none;background:none;text-align:left;color:var(--t2);font-size:12px;transition:all .15s;border-left:3px solid transparent;display:flex;align-items:center;gap:10px;width:100%}
+    .lb:hover{background:var(--bg3);color:var(--t1)}.lb.active{background:var(--bg3);color:var(--ac);border-left-color:var(--ac)}
+    .lb .l{font-weight:600}.lb .d{font-size:10px;color:var(--t3);margin-top:1px}.lb .g{font-size:8px;background:var(--nv);color:#000;padding:1px 5px;border-radius:6px;font-weight:700;margin-left:auto}
+    #sp{padding:12px 16px;border-top:1px solid var(--brd);margin-top:auto}#sp h3{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .sr{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}.sr .v{color:var(--ac);font-weight:600}
+    #ma{flex:1;position:relative}arcgis-map{width:100%;height:100%}
+    #ip{position:absolute;top:12px;right:12px;background:rgba(17,24,39,.92);border:1px solid var(--brd);border-radius:10px;padding:16px;max-width:340px;backdrop-filter:blur(12px);z-index:10}
+    #ip h2{font-size:14px;color:#fff;margin-bottom:4px}#ip .mt{display:inline-block;font-size:9px;background:var(--nv);color:#000;padding:2px 7px;border-radius:8px;font-weight:700;margin-bottom:6px}
+    #ip p{font-size:11px;color:var(--t2);line-height:1.5}.lg{margin-top:8px;display:flex;flex-wrap:wrap;gap:3px 12px}
+    .li{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--t2)}.ls{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+  </style>
+</head>
+<body>
+<div id="hdr"><div><h1><span>GPU</span> Climate Analytics</h1><div class="sub">500 NOAA Stations | CONUS | CuPy + ArcGIS 5.0</div></div><div style="display:flex;gap:6px"><span class="bdg bdg-n">NVIDIA RTX</span><span class="bdg bdg-a">ArcGIS 5.0</span></div></div>
+<div id="app">
+  <div id="sb">
+    <div class="sl">Temperature</div>
+    <button class="lb active" data-layer="stations"><div><span class="l">Weather Stations</span><span class="d">500 stations with temperature</span></div></button>
+    <button class="lb" data-layer="temp"><div><span class="l">Temperature Surface</span><span class="d">IDW interpolated temperature</span></div><span class="g">GPU</span></button>
+    <button class="lb" data-layer="anomalies"><div><span class="l">Anomalies</span><span class="d">Warm/Cold deviations</span></div><span class="g">GPU</span></button>
+    <div class="sl">Precipitation & Zones</div>
+    <button class="lb" data-layer="precip"><div><span class="l">Precipitation Surface</span><span class="d">IDW interpolated rainfall</span></div><span class="g">GPU</span></button>
+    <button class="lb" data-layer="clusters"><div><span class="l">Climate Zones</span><span class="d">K-Means climate clustering</span></div><span class="g">GPU</span></button>
+    <div id="sp"><h3>Summary</h3><div id="sc"></div></div>
+  </div>
+  <div id="ma">
+    <arcgis-map basemap="dark-gray-vector" center="-98,39" zoom="4"><arcgis-zoom position="top-left"></arcgis-zoom></arcgis-map>
+    <div id="ip"><h2 id="it">Weather Stations</h2><span class="mt" id="im">NOAA DATA</span><p id="id"></p><div class="lg" id="il"></div></div>
+  </div>
+</div>
+<script type="module">
+const GeoJSONLayer=await $arcgis.import("@arcgis/core/layers/GeoJSONLayer.js");
+const D="data/",mapEl=document.querySelector("arcgis-map");await mapEl.viewOnReady();
+
+const meta={
+  stations:{title:"Weather Stations",method:"NOAA DATA",desc:"500 weather stations across CONUS showing average January temperature. Color-coded from cold (blue) to warm (red). Each station includes temperature, precipitation, wind, and humidity data.",
+    legend:[["#0d47a1","< -10C"],["#2196f3","-10 to 0C"],["#ffeb3b","0 to 10C"],["#ff9800","10 to 20C"],["#f44336","> 20C"]]},
+  temp:{title:"Temperature Surface",method:"GPU IDW",desc:"GPU-accelerated Inverse Distance Weighted interpolation of temperature across a 120x60 grid. CuPy computes the full distance matrix between 7,200 grid points and 500 stations in parallel.",
+    legend:[["#0d47a1","< -10C"],["#2196f3","-10 to 0C"],["#ffeb3b","0 to 10C"],["#ff9800","10 to 20C"],["#f44336","> 20C"]]},
+  anomalies:{title:"Temperature Anomalies",method:"GPU ANOMALY",desc:"Stations with temperature more than 5C above or below the latitude-expected value. Warm anomalies (red) may indicate urban heat islands or warm air masses. Cold anomalies (blue) may indicate elevation effects or cold fronts.",
+    legend:[["#f44336","Warm Anomaly (>+5C)"],["#2196f3","Cold Anomaly (<-5C)"]]},
+  precip:{title:"Precipitation Surface",method:"GPU IDW",desc:"GPU-accelerated IDW interpolation of precipitation across CONUS. Reveals the wet Pacific Northwest, dry Southwest, and humid Southeast patterns.",
+    legend:[["#fff9c4","< 0.1 in"],["#81d4fa","0.1-0.3 in"],["#2196f3","0.3-0.5 in"],["#0d47a1","> 0.5 in"]]},
+  clusters:{title:"Climate Zones",method:"GPU K-MEANS",desc:"GPU-accelerated K-Means clustering on temperature, temperature range, precipitation, humidity, and latitude. 6 distinct climate zones identified across CONUS.",
+    legend:[["#2196f3","Continental Cold"],["#4caf50","Maritime Mild"],["#ff9800","Humid Subtropical"],["#f44336","Arid Desert"],["#9c27b0","Mountain"],["#00bcd4","Pacific Coast"]]}
+};
+
+const layers={};
+const tempR=(f,c,b)=>({type:"class-breaks",field:f,classBreakInfos:b.map((r,i)=>({minValue:r[0],maxValue:r[1],symbol:{type:"simple-marker",color:c[i],size:r[2]||5,outline:null},label:r[3]}))});
+
+layers.stations=new GeoJSONLayer({url:D+"stations.geojson",visible:true,
+  renderer:tempR("tavg_c",["#0d47a1","#2196f3","#ffeb3b","#ff9800","#f44336"],[[-30,-10,6,"< -10C"],[-10,0,6,"-10-0C"],[0,10,6,"0-10C"],[10,20,6,"10-20C"],[20,40,6,"> 20C"]]),
+  popupTemplate:{title:"{name}",content:"<b>Avg Temp:</b> {tavg_c}C<br><b>Max:</b> {tmax_c}C<br><b>Min:</b> {tmin_c}C<br><b>Precip:</b> {precip_in} in<br><b>Wind:</b> {wind_mph} mph"}});
+layers.temp=new GeoJSONLayer({url:D+"temp_surface.geojson",visible:false,
+  renderer:tempR("temp_c",[[13,71,161,180],[33,150,243,180],[255,235,59,160],[255,152,0,180],[244,67,54,200]],[[-30,-10,4,"< -10C"],[-10,0,4,"-10-0C"],[0,10,4,"0-10C"],[10,20,4,"10-20C"],[20,40,4,"> 20C"]]),
+  popupTemplate:{title:"Temperature",content:"<b>Temp:</b> {temp_c}C"}});
+layers.anomalies=new GeoJSONLayer({url:D+"anomalies.geojson",visible:false,
+  renderer:{type:"unique-value",field:"class",uniqueValueInfos:[
+    {value:"Warm Anomaly",symbol:{type:"simple-marker",color:"#f44336",size:10,outline:{color:"#fff",width:1}},label:"Warm"},
+    {value:"Cold Anomaly",symbol:{type:"simple-marker",color:"#2196f3",size:10,outline:{color:"#fff",width:1}},label:"Cold"}]},
+  popupTemplate:{title:"{station_id}",content:"<b>Temp:</b> {tavg_c}C<br><b>Anomaly:</b> {anomaly_c}C"}});
+layers.precip=new GeoJSONLayer({url:D+"precip_surface.geojson",visible:false,
+  renderer:tempR("precip_in",[[255,249,196,120],[129,212,250,150],[33,150,243,180],[13,71,161,200]],[[0,0.1,4,"< 0.1"],[0.1,0.3,4,"0.1-0.3"],[0.3,0.5,5,"0.3-0.5"],[0.5,5,6,"> 0.5"]]),
+  popupTemplate:{title:"Precipitation",content:"<b>Precip:</b> {precip_in} in"}});
+const zc=["#2196f3","#4caf50","#ff9800","#f44336","#9c27b0","#00bcd4"];
+layers.clusters=new GeoJSONLayer({url:D+"climate_clusters.geojson",visible:false,
+  renderer:{type:"unique-value",field:"cluster",uniqueValueInfos:zc.map((c,i)=>({value:i,symbol:{type:"simple-marker",color:c,size:7,outline:{color:"#fff",width:1}},label:"Zone "+i}))},
+  popupTemplate:{title:"{zone}",content:"<b>Temp:</b> {tavg_c}C<br><b>Precip:</b> {precip_in} in"}});
+
+Object.values(layers).forEach(l=>mapEl.map.add(l));
+const btns=document.querySelectorAll(".lb");
+btns.forEach(b=>b.addEventListener("click",()=>{const n=b.dataset.layer;btns.forEach(x=>x.classList.remove("active"));b.classList.add("active");
+  Object.entries(layers).forEach(([k,l])=>{l.visible=k===n});const m=meta[n];
+  document.getElementById("it").textContent=m.title;document.getElementById("im").textContent=m.method;
+  document.getElementById("id").textContent=m.desc;
+  document.getElementById("il").innerHTML=m.legend.map(([c,l])=>`<div class="li"><div class="ls" style="background:${c}"></div>${l}</div>`).join("");}));
+btns[0].click();
+const s=await fetch(D+"summary.json").then(r=>r.json());
+document.getElementById("sc").innerHTML=[["Stations",s.stations],["Avg Temp",s.avg_temp_c+"C"],["Warm Anomalies",s.warm_anomalies],["Cold Anomalies",s.cold_anomalies],["Climate Zones",s.climate_zones],["GPU",s.gpu?"Yes":"No"]].map(([k,v])=>`<div class="sr"><span>${k}</span><span class="v">${v}</span></div>`).join("");
+</script>
+</body></html>
