@@ -1,0 +1,1 @@
+{"stations": 500, "temp_range": [-21.5, 16.6], "avg_temp_c": -1.7, "avg_precip_in": 0.29, "warm_anomalies": 0, "cold_anomalies": 463, "climate_zones": 6, "gpu": true, "grid_size": [120, 60], "location": "Continental United States", "period": "January 2024"}
